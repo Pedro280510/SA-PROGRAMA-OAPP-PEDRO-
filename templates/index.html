@@ -1,0 +1,604 @@
+
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Fábrica de Chocolate - ERP V1.0</title>
+
+    <!-- CONEXÃO COM CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <!-- CABEÇALHO -->
+    <header>
+        <h1>FÁBRICA DE CHOCOLATE</h1>
+        <h2>Sistema ERP V1.0</h2>
+        <p>Sistema de Gerenciamento da Fábrica</p>
+    </header>
+
+
+    <!-- MENU PRINCIPAL -->
+    <nav>
+        <h2>Menu Principal</h2>
+
+        <ul>
+            <li><a href="#estoque-ingredientes">1 - Estoque de Ingredientes</a></li>
+            <li><a href="#repor-ingredientes">2 - Repor Ingredientes</a></li>
+            <li><a href="#estoque-chocolates">3 - Estoque de Chocolates</a></li>
+            <li><a href="#produzir-chocolates">4 - Produzir Chocolates</a></li>
+            <li><a href="#vender-chocolates">5 - Vender Chocolates</a></li>
+            <li><a href="#relatorio">6 - Relatório e Caixa</a></li>
+            <li><a href="#cadastrar-ingrediente">7 - Cadastrar Ingrediente</a></li>
+            <li><a href="#cadastrar-chocolate">8 - Cadastrar Chocolate</a></li>
+        </ul>
+    </nav>
+
+
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main>
+
+        <!-- MENSAGENS DO FLASK -->
+        {% with mensagens = get_flashed_messages(with_categories=true) %}
+            {% for categoria, mensagem in mensagens %}
+                <div class="mensagem {{ categoria }}">
+                    {{ mensagem }}
+                </div>
+            {% endfor %}
+        {% endwith %}
+
+
+        <!-- ================================= -->
+        <!-- ESTOQUE DE INGREDIENTES -->
+        <!-- ================================= -->
+
+        <section id="estoque-ingredientes">
+
+            <h2>Estoque de Ingredientes</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Ingrediente</th>
+                        <th>Estoque (Kg)</th>
+                        <th>Situação</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for id, ing in ingredientes.items() %}
+
+                    <tr>
+                        <td>{{ id }}</td>
+                        <td>{{ ing.nome }}</td>
+                        <td>{{ ing.estoque }}</td>
+
+                        <td>
+                            {% if ing.estoque <= 10 %}
+                                Estoque Baixo - Repor!
+                            {% else %}
+                                Disponível
+                            {% endif %}
+                        </td>
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+            </table>
+
+        </section>
+
+
+        <!-- ================================= -->
+        <!-- REPOR INGREDIENTES -->
+        <!-- ================================= -->
+
+        <section id="repor-ingredientes">
+
+            <h2>Repor Ingredientes</h2>
+
+            <form action="{{ url_for('repor') }}" method="POST">
+
+                <label>Selecione o Ingrediente:</label>
+
+                <select name="ingrediente" required>
+
+                    <option value="">Selecione</option>
+
+                    {% for id, ing in ingredientes.items() %}
+
+                    <option value="{{ id }}">
+                        {{ ing.nome }}
+                    </option>
+
+                    {% endfor %}
+
+                </select>
+
+
+                <label>Quantidade Recebida (Kg):</label>
+
+                <input
+                    type="number"
+                    name="quantidade"
+                    min="1"
+                    required
+                >
+
+
+                <label>Valor Total Pago (R$):</label>
+
+                <input
+                    type="number"
+                    name="custo"
+                    step="0.01"
+                    min="0"
+                    required
+                >
+
+
+                <button type="submit">
+                    Repor Estoque
+                </button>
+
+            </form>
+
+        </section>
+
+
+        <!-- ================================= -->
+        <!-- ESTOQUE DE CHOCOLATES -->
+        <!-- ================================= -->
+
+        <section id="estoque-chocolates">
+
+            <h2>Estoque de Chocolates</h2>
+
+            <table>
+
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Chocolate</th>
+                        <th>Caixas Prontas</th>
+                        <th>Preço (R$)</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for id, choc in chocolates.items() %}
+
+                    <tr>
+                        <td>{{ id }}</td>
+                        <td>{{ choc.nome }}</td>
+                        <td>{{ choc.prontos }}</td>
+                        <td>R$ {{ "%.2f"|format(choc.preco) }}</td>
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </section>
+
+
+        <!-- ================================= -->
+        <!-- PRODUZIR CHOCOLATES -->
+        <!-- ================================= -->
+
+        <section id="produzir-chocolates">
+
+            <h2>Produzir Chocolates</h2>
+
+            <form action="{{ url_for('produzir') }}" method="POST">
+
+                <label>Selecione o Chocolate:</label>
+
+                <select name="chocolate" required>
+
+                    <option value="">Selecione</option>
+
+                    {% for id, choc in chocolates.items() %}
+
+                    <option value="{{ id }}">
+                        {{ choc.nome }} - {{ choc.prontos }} caixas disponíveis
+                    </option>
+
+                    {% endfor %}
+
+                </select>
+
+
+                <label>Quantidade de Caixas:</label>
+
+                <input
+                    type="number"
+                    name="lotes"
+                    min="1"
+                    required
+                >
+
+
+                <button type="submit">
+                    Produzir Chocolate
+                </button>
+
+            </form>
+
+        </section>
+
+
+        <!-- ================================= -->
+        <!-- VENDER CHOCOLATES -->
+        <!-- ================================= -->
+
+        <section id="vender-chocolates">
+
+            <h2>Vender Chocolates</h2>
+
+            <form action="{{ url_for('adicionar') }}" method="POST">
+
+                <label>Selecione o Chocolate:</label>
+
+                <select name="produto" required>
+
+                    <option value="">Selecione</option>
+
+                    {% for id, choc in chocolates.items() %}
+
+                    <option value="{{ id }}">
+                        {{ choc.nome }} -
+                        R$ {{ "%.2f"|format(choc.preco) }}
+                        ({{ choc.prontos }} disponíveis)
+                    </option>
+
+                    {% endfor %}
+
+                </select>
+
+
+                <label>Quantidade de Caixas:</label>
+
+                <input
+                    type="number"
+                    name="quantidade"
+                    min="1"
+                    required
+                >
+
+
+                <button type="submit">
+                    Adicionar ao Carrinho
+                </button>
+
+            </form>
+
+
+            <!-- CARRINHO -->
+
+            <h3>Carrinho de Compras</h3>
+
+            <table>
+
+                <thead>
+                    <tr>
+                        <th>Produto</th>
+                        <th>Quantidade</th>
+                        <th>Preço</th>
+                        <th>Subtotal</th>
+                        <th>Ação</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for id, quantidade in carrinho.items() %}
+
+                    {% set choc = chocolates[id|int] %}
+
+                    <tr>
+
+                        <td>{{ choc.nome }}</td>
+
+                        <td>{{ quantidade }}</td>
+
+                        <td>
+                            R$ {{ "%.2f"|format(choc.preco) }}
+                        </td>
+
+                        <td>
+                            R$ {{ "%.2f"|format(choc.preco * quantidade) }}
+                        </td>
+
+                        <td>
+
+                            <form
+                                action="{{ url_for('remover', id_item=id|int) }}"
+                                method="POST"
+                            >
+
+                                <button type="submit">
+                                    Remover
+                                </button>
+
+                            </form>
+
+                        </td>
+
+                    </tr>
+
+                    {% else %}
+
+                    <tr>
+                        <td colspan="5">
+                            Nenhum produto adicionado.
+                        </td>
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+
+            <!-- IDENTIFICAÇÃO DO CLIENTE -->
+
+            <h3>Identificação do Cliente</h3>
+
+            <form action="{{ url_for('finalizar_venda') }}" method="POST">
+
+                <label>CPF ou Telefone:</label>
+
+                <input
+                    type="text"
+                    name="cpf"
+                    placeholder="Digite o CPF ou telefone"
+                >
+
+
+                <label>Nome do Cliente:</label>
+
+                <input
+                    type="text"
+                    name="nome"
+                    placeholder="Digite o nome do cliente"
+                >
+
+
+                <button type="submit">
+                    Finalizar Venda
+                </button>
+
+            </form>
+
+
+            <p>
+                Desconto de atacado: 10% para compras de 5 caixas ou mais.
+            </p>
+
+            <p>
+                Programa de fidelidade: a cada 5 compras, o cliente ganha 1 caixa grátis.
+            </p>
+
+        </section>
+
+
+        <!-- ================================= -->
+        <!-- RELATÓRIO DA FÁBRICA -->
+        <!-- ================================= -->
+
+        <section id="relatorio">
+
+            <h2>Relatório da Fábrica</h2>
+
+            <h3>Resumo Financeiro</h3>
+
+            <table>
+
+                <thead>
+                    <tr>
+                        <th>Descrição</th>
+                        <th>Valor</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    <tr>
+                        <td>Receita Bruta (Vendas)</td>
+
+                        <td>
+                            R$ {{ "%.2f"|format(relatorio.receita) }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>Despesas (Compras)</td>
+
+                        <td>
+                            R$ {{ "%.2f"|format(relatorio.despesas) }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>Lucro Líquido</td>
+
+                        <td>
+                            R$ {{ "%.2f"|format(relatorio.lucro) }}
+                        </td>
+                    </tr>
+
+                </tbody>
+
+            </table>
+
+
+            <!-- HISTÓRICO DE PRODUÇÃO -->
+
+            <h3>Histórico de Produção</h3>
+
+            <ul>
+
+                {% for registro in relatorio.historico %}
+
+                    <li>{{ registro }}</li>
+
+                {% else %}
+
+                    <li>Nenhuma produção registrada ainda.</li>
+
+                {% endfor %}
+
+            </ul>
+
+
+            <!-- CAMPEÃO DE VENDAS -->
+
+            <h3>Campeão de Vendas</h3>
+
+            {% if relatorio.campeao and relatorio.campeao.vendidos > 0 %}
+
+                <p>
+                    {{ relatorio.campeao.nome }}
+                    ({{ relatorio.campeao.vendidos }} caixas)
+                </p>
+
+            {% else %}
+
+                <p>Nenhuma venda registrada ainda!</p>
+
+            {% endif %}
+
+        </section>
+
+
+        <!-- ================================= -->
+        <!-- CADASTRAR INGREDIENTE -->
+        <!-- ================================= -->
+
+        <section id="cadastrar-ingrediente">
+
+            <h2>Cadastrar Novo Ingrediente</h2>
+
+            <form
+                action="{{ url_for('cadastrar_ingrediente') }}"
+                method="POST"
+            >
+
+                <label>Nome do Ingrediente:</label>
+
+                <input
+                    type="text"
+                    name="nome"
+                    required
+                >
+
+
+                <label>Quantidade Inicial (Kg):</label>
+
+                <input
+                    type="number"
+                    name="estoque"
+                    min="1"
+                    required
+                >
+
+
+                <button type="submit">
+                    Cadastrar Ingrediente
+                </button>
+
+            </form>
+
+        </section>
+
+
+        <!-- ================================= -->
+        <!-- CADASTRAR CHOCOLATE -->
+        <!-- ================================= -->
+
+        <section id="cadastrar-chocolate">
+
+            <h2>Cadastrar Novo Chocolate</h2>
+
+            <form
+                action="{{ url_for('cadastrar_chocolate') }}"
+                method="POST"
+            >
+
+                <label>Nome do Chocolate:</label>
+
+                <input
+                    type="text"
+                    name="nome"
+                    required
+                >
+
+
+                <label>Preço da Caixa (R$):</label>
+
+                <input
+                    type="number"
+                    name="preco"
+                    step="0.01"
+                    min="0.01"
+                    required
+                >
+
+
+                <h3>Receita do Chocolate</h3>
+
+                <p>
+                    Informe quanto cada caixa utiliza de cada ingrediente.
+                </p>
+
+
+                {% for id, ing in ingredientes.items() %}
+
+                    <label>{{ ing.nome }}:</label>
+
+                    <input
+                        type="number"
+                        name="ingrediente_{{ id }}"
+                        min="0"
+                        value="0"
+                    >
+
+                {% endfor %}
+
+
+                <button type="submit">
+                    Cadastrar Chocolate
+                </button>
+
+            </form>
+
+        </section>
+
+    </main>
+
+
+    <!-- RODAPÉ -->
+
+    <footer>
+
+        <p>Fábrica de Chocolate - Sistema ERP V1.0</p>
+
+        <p>Todos os direitos reservados.</p>
+
+    </footer>
+
+</body>
+
+</html>
