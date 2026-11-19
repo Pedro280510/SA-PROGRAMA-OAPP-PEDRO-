@@ -1,3 +1,275 @@
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+import json
+import os
+from datetime import datetime
+
+app = Flask(__name__)
+app.secret_key = "fabrica_chocolate_erp_v1"
+
+ARQUIVO = "dados_fabrica.json"
+
+
+# =========================================
+# CLASSE INGREDIENTE
+# =========================================
+
+class Ingrediente:
+    def __init__(self, nome, estoque):
+        self.nome = nome
+        self.estoque = estoque
+
+    def to_dict(self):
+        return {
+            "Item": self.nome,
+            "Estoque": [self.estoque]
+        }
+
+    @classmethod
+    def from_dict(cls, dados):
+        return cls(dados["Item"], dados["Estoque"][0])
+
+
+# =========================================
+# CLASSE CHOCOLATE
+# =========================================
+
+class Chocolate:
+    def __init__(self, nome, preco, prontos=0, vendidos=0, receita=None):
+        self.nome = nome
+        self.preco = preco
+        self.prontos = prontos
+        self.vendidos = vendidos
+        self.receita = receita if receita is not None else {}
+
+    def to_dict(self):
+        return {
+            "Nome": self.nome,
+            "Receita": self.receita,
+            "Prontos": [self.prontos],
+            "Preco": [self.preco],
+            "Vendidos": [self.vendidos]
+        }
+
+    @classmethod
+    def from_dict(cls, dados):
+        receita = {
+            int(k): v for k, v in dados.get("Receita", {}).items()
+        }
+
+        return cls(
+            dados["Nome"],
+            dados["Preco"][0],
+            dados["Prontos"][0],
+            dados["Vendidos"][0],
+            receita
+        )
+
+
+# =========================================
+# CLASSE CLIENTE
+# =========================================
+
+class Cliente:
+    def __init__(self, nome, compras=0):
+        self.nome = nome
+        self.compras = compras
+
+    def registrar_compra(self):
+        self.compras += 1
+        return self.compras
+
+    def to_dict(self):
+        return {
+            "Nome": self.nome,
+            "Compras": self.compras
+        }
+
+    @classmethod
+    def from_dict(cls, dados):
+        return cls(dados["Nome"], dados["Compras"])
+
+
+# =========================================
+# CLASSE PRINCIPAL ERP
+# =========================================
+
+class FabricaERP:
+
+    def __init__(self):
+
+        self.ingredientes = {
+            1: Ingrediente("Massa de Cacau (Kg)", 50),
+            2: Ingrediente("Leite em Pó (Kg)", 50),
+            3: Ingrediente("Açúcar (Kg)", 50),
+            4: Ingrediente("Avelã (Kg)", 50)
+        }
+
+        self.chocolates = {
+            1: Chocolate(
+                "Barra ao Leite", 45.00, 5,
+                receita={1: 2, 2: 2, 3: 2}
+            ),
+            2: Chocolate(
+                "Barra Amargo 70%", 55.00, 3,
+                receita={1: 4, 3: 1}
+            ),
+            3: Chocolate(
+                "BomBom de Avelã", 70.00, 2,
+                receita={1: 2, 2: 1, 3: 2, 4: 2}
+            ),
+            4: Chocolate(
+                "Barra de Chocolate Branco", 50.00, 0,
+                receita={2: 3, 3: 2}
+            ),
+            5: Chocolate(
+                "Barra Crocante com Avelã", 60.00, 4,
+                receita={1: 3, 2: 1, 3: 1, 4: 1}
+            )
+        }
+
+        self.historico_producao = []
+        self.caixa_vendas = 0.0
+        self.despesas_compras = 0.0
+        self.clientes = {}
+
+    # =====================================
+    # SALVAR DADOS
+    # =====================================
+
+    def salvar_dados(self):
+
+        dados = {
+            "ingredientes": {
+                k: v.to_dict()
+                for k, v in self.ingredientes.items()
+            },
+
+            "chocolates": {
+                k: v.to_dict()
+                for k, v in self.chocolates.items()
+            },
+
+            "historico_producao": self.historico_producao,
+            "caixa_vendas": self.caixa_vendas,
+            "despesas_compras": self.despesas_compras,
+
+            "clientes": {
+                k: v.to_dict()
+                for k, v in self.clientes.items()
+            }
+        }
+
+        with open(ARQUIVO, "w", encoding="utf-8") as arquivo:
+            json.dump(dados, arquivo, ensure_ascii=False, indent=4)
+
+    # =====================================
+    # CARREGAR DADOS
+    # =====================================
+
+    def carregar_dados(self):
+
+        if not os.path.exists(ARQUIVO):
+            return
+
+        with open(ARQUIVO, "r", encoding="utf-8") as arquivo:
+            dados = json.load(arquivo)
+
+        self.ingredientes = {
+            int(k): Ingrediente.from_dict(v)
+            for k, v in dados["ingredientes"].items()
+        }
+
+        self.chocolates = {
+            int(k): Chocolate.from_dict(v)
+            for k, v in dados["chocolates"].items()
+        }
+
+        self.clientes = {
+            k: Cliente.from_dict(v)
+            for k, v in dados.get("clientes", {}).items()
+        }
+
+        self.historico_producao = dados.get(
+            "historico_producao", []
+        )
+
+        self.caixa_vendas = dados.get("caixa_vendas", 0.0)
+
+        self.despesas_compras = dados.get(
+            "despesas_compras", 0.0
+        )
+
+    # =====================================
+    # REPOR INGREDIENTES
+    # =====================================
+
+    def comprar_ingredientes(self, escolha, quantidade, custo):
+
+        if escolha not in self.ingredientes:
+            raise ValueError("Ingrediente não encontrado!")
+
+        if quantidade <= 0:
+            raise ValueError("Quantidade inválida!")
+
+        if custo < 0:
+            raise ValueError("Valor inválido!")
+
+        self.ingredientes[escolha].estoque += quantidade
+        self.despesas_compras += custo
+
+        self.salvar_dados()
+
+    # =====================================
+    # PRODUZIR CHOCOLATES
+    # =====================================
+
+    def produzir_chocolate(self, escolha, lotes):
+
+        if escolha not in self.chocolates:
+            raise ValueError("Chocolate inválido!")
+
+        if lotes <= 0:
+            raise ValueError("Quantidade inválida!")
+
+        chocolate = self.chocolates[escolha]
+
+        for id_ing, qtd_por_caixa in chocolate.receita.items():
+
+            necessario = qtd_por_caixa * lotes
+
+            if self.ingredientes[id_ing].estoque < necessario:
+                raise ValueError(
+                    f"Falta {self.ingredientes[id_ing].nome} no estoque!"
+                )
+
+        for id_ing, qtd_por_caixa in chocolate.receita.items():
+
+            self.ingredientes[id_ing].estoque -= (
+                qtd_por_caixa * lotes
+            )
+
+        chocolate.prontos += lotes
+
+        agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+        self.historico_producao.append(
+            f"[{agora}] {lotes}x {chocolate.nome}"
+        )
+
+        self.salvar_dados()
+
+    # =====================================
+    # CADASTRAR INGREDIENTE
+    # =====================================
+
+    def cadastrar_ingrediente(self, nome, estoque):
+
+        if not nome.strip():
+            raise ValueError("Nome inválido!")
+
+        if estoque <= 0:
+            raise ValueError("Quantidade inválida!")
+
         if any(
             ing.nome.strip().lower() == nome.strip().lower()
             for ing in self.ingredientes.values()
@@ -133,6 +405,52 @@
             total -= desconto
 
         total = round(total, 2)
+
+
+        self.caixa_vendas += total
+
+        self.salvar_dados()
+
+        return {
+            "cliente": nome_cliente,
+            "total": total,
+            "desconto": desconto,
+            "caixas": total_caixas,
+            "brinde": ganhou_brinde
+        }
+
+    # =====================================
+    # RELATÓRIO
+    # =====================================
+
+    def ver_relatorio(self):
+
+        lucro = self.caixa_vendas - self.despesas_compras
+
+        campeao = max(
+            self.chocolates.values(),
+            key=lambda choc: choc.vendidos,
+            default=None
+        )
+
+        return {
+            "receita": self.caixa_vendas,
+            "despesas": self.despesas_compras,
+            "lucro": lucro,
+            "historico": self.historico_producao,
+            "campeao": campeao
+        }
+
+
+# =========================================
+# INICIALIZAÇÃO DO SISTEMA
+# =========================================
+
+fabrica = FabricaERP()
+fabrica.carregar_dados()
+
+
+# =========================================
 # MENSAGENS DE ERRO AMIGÁVEIS
 # =========================================
 
@@ -147,6 +465,54 @@ def texto_erro(erro):
         return "Valor numérico inválido!"
 
     return mensagem
+
+
+
+# =========================================
+# ROTA PRINCIPAL
+# =========================================
+
+@app.route("/")
+def inicio():
+
+    relatorio = fabrica.ver_relatorio()
+
+    return render_template(
+        "index.html",
+
+        ingredientes=fabrica.ingredientes,
+        chocolates=fabrica.chocolates,
+
+        relatorio=relatorio,
+
+        clientes=fabrica.clientes,
+
+        carrinho=session.get("carrinho", {})
+    )
+
+
+# =========================================
+# ROTA PARA REPOR INGREDIENTES
+# =========================================
+
+@app.route("/repor", methods=["POST"])
+def repor():
+
+    try:
+
+        escolha = int(request.form["ingrediente"])
+        quantidade = int(request.form["quantidade"])
+        custo = float(
+            request.form["custo"].replace(",", ".")
+        )
+
+        fabrica.comprar_ingredientes(
+            escolha, quantidade, custo
+        )
+
+        flash("Estoque atualizado com sucesso!", "sucesso")
+
+    except (ValueError, KeyError) as erro:
         flash(texto_erro(erro), "erro")
 
     return redirect(url_for("inicio"))
@@ -207,6 +573,65 @@ def adicionar():
 
     except (ValueError, KeyError) as erro:
         flash(texto_erro(erro), "erro")
+
+
+    return redirect(url_for("inicio"))
+
+
+# =========================================
+# ROTA PARA REMOVER PRODUTO DO CARRINHO
+# =========================================
+
+@app.route("/remover/<int:id_item>", methods=["POST"])
+def remover(id_item):
+
+    carrinho = session.get("carrinho", {})
+
+    carrinho.pop(str(id_item), None)
+
+    session["carrinho"] = carrinho
+
+    return redirect(url_for("inicio"))
+
+
+# =========================================
+# ROTA PARA FINALIZAR VENDA
+# =========================================
+
+@app.route("/finalizar_venda", methods=["POST"])
+def finalizar_venda():
+
+    try:
+
+        carrinho = {
+            int(k): int(v)
+            for k, v in session.get("carrinho", {}).items()
+        }
+
+        cpf = request.form.get("cpf", "").strip()
+        nome = request.form.get("nome", "").strip()
+
+        resultado = fabrica.vender_chocolates(
+            carrinho, cpf, nome
+        )
+
+        session["carrinho"] = {}
+
+        flash(
+            f"Venda concluída! Total: R$ {resultado['total']:.2f}",
+            "sucesso"
+        )
+
+        if resultado["desconto"] > 0:
+            flash(
+                f"Desconto aplicado: R$ {resultado['desconto']:.2f}",
+                "sucesso"
+            )
+
+        if resultado["brinde"]:
+            flash("Parabéns! O cliente ganhou uma caixa grátis!", "sucesso")
+
+    except (ValueError, KeyError) as erro:
         flash(texto_erro(erro), "erro")
 
     return redirect(url_for("inicio"))
@@ -230,6 +655,47 @@ def cadastrar_ingrediente():
 
     except (ValueError, KeyError) as erro:
         flash(texto_erro(erro), "erro")
+
+
+    return redirect(url_for("inicio"))
+
+
+# =========================================
+# ROTA PARA CADASTRAR CHOCOLATE
+# =========================================
+
+@app.route("/cadastrar_chocolate", methods=["POST"])
+def cadastrar_chocolate():
+
+    try:
+
+        nome = request.form["nome"].strip()
+
+        preco = float(
+            request.form["preco"].replace(",", ".")
+        )
+
+        receita = {}
+
+        for id_ing in fabrica.ingredientes:
+
+            quantidade = int(
+                request.form.get(f"ingrediente_{id_ing}", 0)
+            )
+
+            if quantidade < 0:
+                raise ValueError("Quantidade inválida!")
+
+            if quantidade > 0:
+                receita[id_ing] = quantidade
+
+        fabrica.cadastrar_chocolate(
+            nome, preco, receita
+        )
+
+        flash("Chocolate cadastrado com sucesso!", "sucesso")
+
+    except (ValueError, KeyError) as erro:
         flash(texto_erro(erro), "erro")
 
     return redirect(url_for("inicio"))

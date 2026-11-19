@@ -3,7 +3,7 @@
         "1": {
             "Item": "Massa de Cacau (Kg)",
             "Estoque": [
-                22
+                112
             ]
         },
         "2": {
@@ -122,7 +122,7 @@
         "[17/11/2026 16:44] 1x Barra Amargo 70%"
     ],
     "caixa_vendas": 1263.5,
-    "despesas_compras": 0.0,
+    "despesas_compras": 2000.0,
     "clientes": {
         "095.171.921-23": {
             "Nome": "Pedro",
