@@ -1,27 +1,23 @@
 import os
-import time
 import json
 from datetime import datetime
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 
-os.system("cls")
-
-
-def ler_numero(mensagem):
-    while True:
-        try:
-            numero = int(input(mensagem))
-            return numero
-        except ValueError:
-            print("Invalido! DIGITE APENAS NUMEROS")
+ARQUIVO = "dados_fabrica.json"
 
 
-def ler_decimal(mensagem):
-    while True:
-        try:
-            valor = input(mensagem).strip().replace(",", ".")
-            return float(valor)
-        except ValueError:
-            print("Inválido! Digite um valor numérico (ex: 45,50 ou 45.50)")
+def para_int(valor, padrao=0):
+    try:
+        return int(str(valor).strip())
+    except ValueError:
+        return padrao
+
+
+def para_float(valor, padrao=0.0):
+    try:
+        return float(str(valor).strip().replace(",", "."))
+    except ValueError:
+        return padrao
 
 
 class Ingrediente:
@@ -46,24 +42,14 @@ class Chocolate:
         self.receita = receita if receita is not None else {}
 
     def to_dict(self):
-        return {
-            "Nome": self.nome,
-            "Receita": self.receita,
-            "Prontos": [self.prontos],
-            "Preco": [self.preco],
-            "Vendidos": [self.vendidos]
-        }
+        return {"Nome": self.nome, "Receita": self.receita, "Prontos": [self.prontos],
+                "Preco": [self.preco], "Vendidos": [self.vendidos]}
 
     @classmethod
     def from_dict(cls, dados):
-        receita = {int(ik): iv for ik, iv in dados.get("Receita", {}).items()}
-        return cls(
-            nome=dados["Nome"],
-            preco=dados["Preco"][0],
-            prontos=dados["Prontos"][0],
-            vendidos=dados["Vendidos"][0],
-            receita=receita
-        )
+        receita = {int(k): v for k, v in dados.get("Receita", {}).items()}
+        return cls(dados["Nome"], dados["Preco"][0], dados["Prontos"][0],
+                   dados["Vendidos"][0], receita)
 
 
 class Cliente:
@@ -89,247 +75,148 @@ class FabricaERP:
             1: Ingrediente("Massa de Cacau (Kg)", 50),
             2: Ingrediente("Leite em Pó (Kg)", 50),
             3: Ingrediente("Açucar (Kg)", 50),
-            4: Ingrediente("Avelã (Kg)", 50)
+            4: Ingrediente("Avelã (Kg)", 50),
         }
-
         self.chocolates = {
             1: Chocolate("Barra ao Leite", 45.00, prontos=5, receita={1: 2, 2: 2, 3: 2}),
             2: Chocolate("Barra Amargo 70%", 55.00, prontos=3, receita={1: 4, 3: 1}),
             3: Chocolate("BomBom de Avelã", 70.00, prontos=2, receita={1: 2, 2: 1, 3: 2, 4: 2}),
             4: Chocolate("Barra de Chocolate Branco", 50.00, prontos=0, receita={2: 3, 3: 2}),
-            5: Chocolate("Barra Crocante com Avelã", 60.00, prontos=4, receita={1: 3, 2: 1, 3: 1, 4: 1})
+            5: Chocolate("Barra Crocante com Avelã", 60.00, prontos=4, receita={1: 3, 2: 1, 3: 1, 4: 1}),
         }
-
         self.historico_producao = []
         self.caixa_vendas = 0.0
         self.despesas_compras = 0.0
         self.clientes = {}
 
-    def mostrar_ingredientes(self):
-        print("======== ESTOQUE DE INGREDIENTE =======")
-        for id_ingrediente, ing in self.ingredientes.items():
-            alerta = "  <-- [!] ESTOQUE BAIXO - REPOR!" if ing.estoque <= 10 else ""
-            print(f"{id_ingrediente}.{ing.nome} - Estoque {ing.estoque} Kg{alerta}")
-            time.sleep(0.1)
-
-    def mostrar_chocolates(self):
-        print("======== ESTOQUE DE CHOCOLATE =======")
-        for id_chocolate, choc in self.chocolates.items():
-            print(f"{id_chocolate}. {choc.nome} - Prontos: {choc.prontos} cx | Preço: R$ {choc.preco:.2f}")
-
-    def comprar_ingredientes(self):
-        self.mostrar_ingredientes()
-        escolha = ler_numero("Qual Ingrediente Chegou? ")
-        if escolha == 0:
-            return
-        if escolha not in self.ingredientes:
-            print("Ingrediente não encontrado!")
-            return
-
-        quantidade = ler_numero("Quantos Quilos Chegaram? ")
+    # ---------- Ingredientes ----------
+    def comprar_ingredientes(self, id_ing, quantidade, custo):
+        if id_ing not in self.ingredientes:
+            return "erro", "Ingrediente não encontrado."
         if quantidade <= 0:
-            print("Quantidade inválida!")
-            return
-
-        custo = ler_decimal("Qual foi o valor total pago (R$)? ")
+            return "erro", "Informe uma quantidade maior que zero."
         if custo < 0:
-            print("Valor inválido!")
-            return
-
-        self.ingredientes[escolha].estoque += quantidade
+            return "erro", "O valor pago não pode ser negativo."
+        self.ingredientes[id_ing].estoque += quantidade
         self.despesas_compras += custo
-        print("Estoque Atualizado com Sucesso!")
+        return "ok", f"Estoque de {self.ingredientes[id_ing].nome} atualizado (+{quantidade} Kg)."
 
-    def produzir_chocolate(self):
-        self.mostrar_chocolates()
-        escolha = ler_numero("\nQual Chocolate deseja Produzir? ")
-        if escolha == 0:
-            return
-        if escolha not in self.chocolates:
-            print("Chocolate inválido!")
-            return
-        lotes = ler_numero("Quantas caixas vai produzir? ")
+    def cadastrar_ingrediente(self, nome, estoque):
+        if not nome:
+            return "erro", "Informe o nome do ingrediente."
+        if estoque <= 0:
+            return "erro", "O estoque inicial deve ser maior que zero."
+        novo_id = max(self.ingredientes, default=0) + 1
+        self.ingredientes[novo_id] = Ingrediente(nome, estoque)
+        return "ok", f"{nome} cadastrado com {estoque} Kg."
+
+    # ---------- Chocolates ----------
+    def produzir_chocolate(self, id_choc, lotes):
+        if id_choc not in self.chocolates:
+            return "erro", "Chocolate inválido."
         if lotes <= 0:
-            print("Quantidade inválida!")
-            return
-
-        choc = self.chocolates[escolha]
-
-        for id_ing, qtd_por_caixa in choc.receita.items():
-            if self.ingredientes[id_ing].estoque < qtd_por_caixa * lotes:
-                print(f"Falta {self.ingredientes[id_ing].nome} no estoque!")
-                return
-
-        for id_ing, qtd_por_caixa in choc.receita.items():
-            self.ingredientes[id_ing].estoque -= qtd_por_caixa * lotes
-
+            return "erro", "Informe quantas caixas produzir."
+        choc = self.chocolates[id_choc]
+        for id_ing, qtd in choc.receita.items():
+            if self.ingredientes[id_ing].estoque < qtd * lotes:
+                return "erro", f"Falta {self.ingredientes[id_ing].nome} no estoque."
+        for id_ing, qtd in choc.receita.items():
+            self.ingredientes[id_ing].estoque -= qtd * lotes
         choc.prontos += lotes
         agora = datetime.now().strftime("%d/%m/%Y %H:%M")
         self.historico_producao.append(f"[{agora}] {lotes}x {choc.nome}")
-        print("Produção concluída com sucesso!")
+        return "ok", f"{lotes} caixa(s) de {choc.nome} produzida(s)."
 
-    def vender_chocolates(self):
-        carrinho = {}
+    def cadastrar_chocolate(self, nome, preco, receita):
+        if not nome:
+            return "erro", "Informe o nome do chocolate."
+        if preco <= 0:
+            return "erro", "O preço deve ser maior que zero."
+        if not receita:
+            return "erro", "O chocolate precisa usar pelo menos 1 ingrediente."
+        novo_id = max(self.chocolates, default=0) + 1
+        self.chocolates[novo_id] = Chocolate(nome, preco, receita=receita)
+        return "ok", f"{nome} cadastrado."
 
-        while True:
-            self.mostrar_chocolates()
-            if carrinho:
-                print("\n--- Carrinho Atual ---")
-                for id_item, qtd_item in carrinho.items():
-                    print(f"- {qtd_item}x {self.chocolates[id_item].nome}")
+    # ---------- Vendas ----------
+    def resumo_carrinho(self, carrinho):
+        itens, bruto, caixas = [], 0.0, 0
+        for id_item, qtd in carrinho.items():
+            choc = self.chocolates[id_item]
+            itens.append({"id": id_item, "nome": choc.nome, "qtd": qtd, "subtotal": choc.preco * qtd})
+            bruto += choc.preco * qtd
+            caixas += qtd
+        desconto = bruto * 0.10 if caixas >= 5 else 0.0
+        return {"itens": itens, "bruto": bruto, "desconto": desconto, "total": bruto - desconto}
 
-            entrada = input("\nEscolha o chocolate (ou 0 / ENTER para finalizar): ").strip()
+    def adicionar_ao_carrinho(self, carrinho, id_choc, qtd):
+        if id_choc not in self.chocolates:
+            return "erro", "Chocolate inválido."
+        if qtd <= 0:
+            return "erro", "Informe uma quantidade maior que zero."
+        choc = self.chocolates[id_choc]
+        ja = carrinho.get(id_choc, 0)
+        if choc.prontos < ja + qtd:
+            return "erro", f"Estoque insuficiente. Disponível: {choc.prontos - ja} cx."
+        carrinho[id_choc] = ja + qtd
+        return "ok", f"{qtd}x {choc.nome} no carrinho."
 
-            if entrada == "" or entrada == "0":
-                break
+    def finalizar_venda(self, carrinho, cpf, nome):
+        msgs = []
+        for id_item, qtd in carrinho.items():
+            if self.chocolates[id_item].prontos < qtd:
+                return [("erro", f"Estoque de {self.chocolates[id_item].nome} mudou. Revise o carrinho.")]
 
-            if not entrada.isdigit():
-                print("Inválido! Digite o número do chocolate ou 0 para finalizar.")
-                continue
-
-            escolha = int(entrada)
-            if escolha not in self.chocolates:
-                print("Chocolate inválido!")
-                continue
-
-            quantidade = ler_numero("Quantas caixas deseja? ")
-            if quantidade <= 0:
-                print("Quantidade inválida!")
-                continue
-
-            choc = self.chocolates[escolha]
-            ja_no_carrinho = carrinho.get(escolha, 0)
-            if choc.prontos < (ja_no_carrinho + quantidade):
-                print(f"Estoque insuficiente! Disponível: {choc.prontos - ja_no_carrinho} cx.")
-                continue
-
-            carrinho[escolha] = ja_no_carrinho + quantidade
-            print(f"{quantidade}x {choc.nome} adicionado ao carrinho!")
-
-        if not carrinho:
-            return
-
-        cpf = input("\nCPF ou Telefone do cliente (ou ENTER para pular): ").strip()  # .strip ele reconhece que não tem nada deixa em vazio e vai para o proximo
         nome_cliente = "Cliente Balcão"
-        ganhou_brinde = False
-
-        if cpf != "":
-            if cpf not in self.clientes:  # Guarda os clientes cadastrados no programa de fidelidade (pelo CPF ou telefone)
-                nome_cliente = input("Digite seu nome: ").strip() or "Cliente"
+        if cpf:
+            if cpf not in self.clientes:
+                nome_cliente = nome or "Cliente"
                 self.clientes[cpf] = Cliente(nome_cliente)
             else:
                 nome_cliente = self.clientes[cpf].nome
-
-            total_compras = self.clientes[cpf].registrar_compra()
-            print(f"Cliente: {nome_cliente} | Compra nº {total_compras} no Cartão Fidelidade")
-
-            if total_compras % 5 == 0:
-                for id_item in carrinho:
-                    if self.chocolates[id_item].prontos >= (carrinho[id_item] + 1):
-                        self.chocolates[id_item].prontos -= 1
-                        ganhou_brinde = True
-                        print(f"PARABÉNS! 5ª compra atingida: +1 caixa GRÁTIS de {self.chocolates[id_item].nome}!")
+            n = self.clientes[cpf].registrar_compra()
+            msgs.append(("ok", f"{nome_cliente}: compra nº {n} no cartão fidelidade."))
+            if n % 5 == 0:
+                for id_item, qtd in carrinho.items():
+                    choc = self.chocolates[id_item]
+                    if choc.prontos >= qtd + 1:
+                        choc.prontos -= 1
+                        msgs.append(("ok", f"5ª compra: +1 caixa grátis de {choc.nome}."))
                         break
 
-        total = 0.0
-        total_caixas = 0
-        for id_item, qtd_item in carrinho.items():
-            choc = self.chocolates[id_item]
-            choc.prontos -= qtd_item
-            choc.vendidos += qtd_item
-            total += choc.preco * qtd_item
-            total_caixas += qtd_item
+        resumo = self.resumo_carrinho(carrinho)
+        for id_item, qtd in carrinho.items():
+            self.chocolates[id_item].prontos -= qtd
+            self.chocolates[id_item].vendidos += qtd
+        self.caixa_vendas += resumo["total"]
+        if resumo["desconto"]:
+            msgs.append(("ok", f"Desconto de atacado aplicado: -R$ {resumo['desconto']:.2f}."))
+        msgs.append(("ok", f"Venda concluída para {nome_cliente}: R$ {resumo['total']:.2f}."))
+        return msgs
 
-        if total_caixas >= 5:
-            desconto = total * 0.10
-            total -= desconto
-            print(f"Desconto de atacado ({total_caixas} caixas - 10%): -R$ {desconto:.2f}")
+    # ---------- Relatório ----------
+    def campeao(self):
+        melhor = max(self.chocolates.values(), key=lambda c: c.vendidos, default=None)
+        return melhor if melhor and melhor.vendidos > 0 else None
 
-        self.caixa_vendas += total
-        print(f"Venda concluída para {nome_cliente}! Total: R$ {total:.2f}")
-        if ganhou_brinde:
-            print("(Brinde fidelidade já descontado do estoque!)")
-
-    def ver_relatorio(self):
-        lucro = self.caixa_vendas - self.despesas_compras
-        print("\n======== RELATÓRIO DA FÁBRICA ========")
-        print(f"Receita Bruta (Vendas):   R$ {self.caixa_vendas:.2f}")
-        print(f"Despesas (Compras):       R$ {self.despesas_compras:.2f}")
-        print(f"Lucro Líquido:            R$ {lucro:.2f}")
-        print("\n--- Histórico de Produção ---")
-        if len(self.historico_producao) == 0:
-            print("Nenhuma produção registrada ainda.")
-        else:
-            for registro in self.historico_producao:
-                print(registro)
-        # Percorre os chocolates para descobrir qual teve mais caixas vendidas
-        campeao_nome = "Nenhuma Venda Ainda!"
-        maior_venda = 0
-        for choc in self.chocolates.values():
-            if choc.vendidos > maior_venda:
-                maior_venda = choc.vendidos
-                campeao_nome = choc.nome
-        print(f"Campeão de Vendas: {campeao_nome} ({maior_venda} caixas)")
-
-    def cadastrar_ingrediente(self):
-        print("\n======== CADASTRAR NOVO INGREDIENTE ========")
-        nome = input("Nome do Ingrediente: ").strip()
-        if nome == "":
-            print("Nome Invalido!")
-            return
-        estoque_inicial = ler_numero("Quantidade Inicial em Estoque: ")
-        if estoque_inicial <= 0:
-            print("Quantidade inválida!")
-            return
-        novo_id = len(self.ingredientes) + 1
-        self.ingredientes[novo_id] = Ingrediente(nome, estoque_inicial)  # Cria o novo ingrediente usando a classe Ingrediente (em maiúsculo para diferenciar da lista)
-        print(f"Sucesso! {nome} cadastrado com ID {novo_id} ({estoque_inicial} Kg).")
-
-    def cadastrar_chocolate(self):
-        print("\n======== CADASTRAR NOVO CHOCOLATE ========")
-        nome = input("Nome novo do Chocolate: ").strip()
-        if nome == "":
-            print("Nome Invalido!")
-            return
-        preco = ler_decimal("Preço da Caixa R$: ")
-        if preco <= 0:
-            print("Valor Invalido!")
-            return
-        receita = {}
-        print("\nInforme quanto cada caixa gasta de cada ingrediente (digite 0 se não usar):")
-        for id_ingrediente, ing in self.ingredientes.items():
-            quantidade = ler_numero(f"- {ing.nome}: ")
-            if quantidade > 0:
-                receita[id_ingrediente] = quantidade
-
-        if len(receita) == 0:
-            print("Erro: o chocolate precisa usar pelo menos 1 ingrediente!")
-            return
-
-        novo_id = len(self.chocolates) + 1
-        self.chocolates[novo_id] = Chocolate(nome, preco, receita=receita)  # Cria o novo Chocolate vinculando a receita montada
-        print(f"\nSucesso! '{nome}' cadastrado com ID {novo_id}!")
-
+    # ---------- Persistência ----------
     def salvar_dados(self):
-        # Converte os objetos das classes para dicionários e grava no arquivo JSON
         dados = {
             "ingredientes": {k: v.to_dict() for k, v in self.ingredientes.items()},
             "chocolates": {k: v.to_dict() for k, v in self.chocolates.items()},
             "historico_producao": self.historico_producao,
             "caixa_vendas": self.caixa_vendas,
             "despesas_compras": self.despesas_compras,
-            "clientes": {k: v.to_dict() for k, v in self.clientes.items()}
+            "clientes": {k: v.to_dict() for k, v in self.clientes.items()},
         }
-        with open("dados_fabrica.json", "w", encoding="utf-8") as arquivo:
-            json.dump(dados, arquivo, ensure_ascii=False, indent=4)
+        with open(ARQUIVO, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False, indent=4)
 
     def carregar_dados(self):
-        if not os.path.exists("dados_fabrica.json"):
+        if not os.path.exists(ARQUIVO):
             return
-
-        with open("dados_fabrica.json", "r", encoding="utf-8") as arquivo:
-            dados = json.load(arquivo)
-
+        with open(ARQUIVO, "r", encoding="utf-8") as f:
+            dados = json.load(f)
         self.ingredientes = {int(k): Ingrediente.from_dict(v) for k, v in dados["ingredientes"].items()}
         self.chocolates = {int(k): Chocolate.from_dict(v) for k, v in dados["chocolates"].items()}
         self.clientes = {k: Cliente.from_dict(v) for k, v in dados.get("clientes", {}).items()}
@@ -338,49 +225,117 @@ class FabricaERP:
         self.despesas_compras = dados.get("despesas_compras", 0.0)
 
 
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "troque-esta-chave-em-producao")
 fabrica = FabricaERP()
 fabrica.carregar_dados()
 
-while True:
-    print ("=========================================================")
-    print ("              FABRICA DE CHOCOLATE  - ERP  V1.0          ")
-    print ("=========================================================")
-    print("1 - Ver Estoque de Ingredientes")
-    print("2 - Repor Ingredientes")
-    print("3 - Ver Estoque de Chocolates")
-    print("4 - Produzir Chocolates")
-    print("5 - Vender Chocolates")
-    print("6 - Ver Relatório e Caixa")
-    print("7 - Cadastrar Ingrediente")
-    print("8 - Cadastrar Chocolate")
-    print("0 - Sair")
-    print ("=========================================================")
 
-    opcao = ler_numero("Escolha um Número: ")
+@app.template_filter("brl")
+def brl(valor):
+    texto = f"{valor:,.2f}"
+    return "R$ " + texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
-    match opcao:
-        case 1:
-            fabrica.mostrar_ingredientes()
-        case 2:
-            fabrica.comprar_ingredientes()
-        case 3:
-            fabrica.mostrar_chocolates()
-        case 4:
-            fabrica.produzir_chocolate()
-        case 5:
-            fabrica.vender_chocolates()
-        case 6:
-            fabrica.ver_relatorio()
-        case 7:
-            fabrica.cadastrar_ingrediente()
-        case 8:
-            fabrica.cadastrar_chocolate()
-        case 0:
-            fabrica.salvar_dados()
-            print("Dados salvos! Obrigado! Até a Próxima!")
-            break
-        case _:
-            print("Opção Invalida! Tente Novamente!")
 
-    input("\nPressione ENTER para continuar...")
-    os.system("cls")
+def avisar(resultado, salvar=True):
+    categoria, mensagem = resultado
+    flash(mensagem, categoria)
+    if categoria == "ok" and salvar:
+        fabrica.salvar_dados()
+    return categoria == "ok"
+
+
+def carrinho_atual():
+    return {int(k): v for k, v in session.get("carrinho", {}).items()}
+
+
+@app.route("/")
+def painel():
+    return render_template("painel.html", f=fabrica, lucro=fabrica.caixa_vendas - fabrica.despesas_compras,
+                           campeao=fabrica.campeao(), pagina="painel")
+
+
+@app.route("/ingredientes")
+def ingredientes():
+    return render_template("ingredientes.html", f=fabrica, pagina="ingredientes")
+
+
+@app.post("/ingredientes/repor")
+def repor_ingrediente():
+    avisar(fabrica.comprar_ingredientes(para_int(request.form.get("id")),
+                                        para_int(request.form.get("quantidade")),
+                                        para_float(request.form.get("custo"))))
+    return redirect(url_for("ingredientes"))
+
+
+@app.post("/ingredientes/novo")
+def novo_ingrediente():
+    avisar(fabrica.cadastrar_ingrediente(request.form.get("nome", "").strip(),
+                                         para_int(request.form.get("estoque"))))
+    return redirect(url_for("ingredientes"))
+
+
+@app.route("/chocolates")
+def chocolates():
+    return render_template("chocolates.html", f=fabrica, pagina="chocolates")
+
+
+@app.post("/chocolates/produzir")
+def produzir():
+    avisar(fabrica.produzir_chocolate(para_int(request.form.get("id")), para_int(request.form.get("lotes"))))
+    return redirect(url_for("chocolates"))
+
+
+@app.post("/chocolates/novo")
+def novo_chocolate():
+    receita = {}
+    for id_ing in fabrica.ingredientes:
+        qtd = para_int(request.form.get(f"ing_{id_ing}"))
+        if qtd > 0:
+            receita[id_ing] = qtd
+    avisar(fabrica.cadastrar_chocolate(request.form.get("nome", "").strip(),
+                                       para_float(request.form.get("preco")), receita))
+    return redirect(url_for("chocolates"))
+
+
+@app.route("/vender")
+def vender():
+    carrinho = carrinho_atual()
+    return render_template("vender.html", f=fabrica, resumo=fabrica.resumo_carrinho(carrinho), pagina="vender")
+
+
+@app.post("/vender/adicionar")
+def adicionar():
+    carrinho = carrinho_atual()
+    avisar(fabrica.adicionar_ao_carrinho(carrinho, para_int(request.form.get("id")),
+                                         para_int(request.form.get("quantidade"), 1)), salvar=False)
+    session["carrinho"] = carrinho
+    return redirect(url_for("vender"))
+
+
+@app.post("/vender/remover/<int:id_choc>")
+def remover(id_choc):
+    carrinho = carrinho_atual()
+    carrinho.pop(id_choc, None)
+    session["carrinho"] = carrinho
+    return redirect(url_for("vender"))
+
+
+@app.post("/vender/finalizar")
+def finalizar():
+    carrinho = carrinho_atual()
+    if not carrinho:
+        flash("O carrinho está vazio.", "erro")
+        return redirect(url_for("vender"))
+    msgs = fabrica.finalizar_venda(carrinho, request.form.get("cpf", "").strip(),
+                                   request.form.get("nome", "").strip())
+    for categoria, texto in msgs:
+        flash(texto, categoria)
+    if msgs[-1][0] == "ok":
+        fabrica.salvar_dados()
+        session["carrinho"] = {}
+    return redirect(url_for("vender"))
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

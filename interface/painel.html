@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h1>Painel</h1>
+<section class="numeros">
+  <div><span>Receita bruta</span><strong>{{ f.caixa_vendas|brl }}</strong></div>
+  <div><span>Despesas com compras</span><strong>{{ f.despesas_compras|brl }}</strong></div>
+  <div class="{{ 'lucro' if lucro >= 0 else 'prejuizo' }}"><span>Lucro líquido</span><strong>{{ lucro|brl }}</strong></div>
+</section>
+
+<section class="bloco">
+  <h2>Campeão de vendas</h2>
+  {% if campeao %}
+    <p><strong>{{ campeao.nome }}</strong> com {{ campeao.vendidos }} caixas vendidas.</p>
+  {% else %}
+    <p class="vazio">Nenhuma venda ainda. Registre a primeira em <a href="{{ url_for('vender') }}">Vender</a>.</p>
+  {% endif %}
+</section>
+
+<section class="bloco">
+  <h2>Histórico de produção</h2>
+  {% if f.historico_producao %}
+    <ul class="historico">{% for r in f.historico_producao|reverse %}<li>{{ r }}</li>{% endfor %}</ul>
+  {% else %}
+    <p class="vazio">Nenhuma produção registrada. Comece em <a href="{{ url_for('chocolates') }}">Chocolates</a>.</p>
+  {% endif %}
+</section>
+{% endblock %}

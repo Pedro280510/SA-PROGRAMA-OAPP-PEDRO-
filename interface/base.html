@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Fábrica de Chocolate{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Figtree:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <aside class="menu">
+    <div class="marca">Fábrica<br>de Chocolate</div>
+    <nav>
+      <a href="{{ url_for('painel') }}" class="{{ 'ativo' if pagina == 'painel' }}">Painel</a>
+      <a href="{{ url_for('ingredientes') }}" class="{{ 'ativo' if pagina == 'ingredientes' }}">Ingredientes</a>
+      <a href="{{ url_for('chocolates') }}" class="{{ 'ativo' if pagina == 'chocolates' }}">Chocolates</a>
+      <a href="{{ url_for('vender') }}" class="{{ 'ativo' if pagina == 'vender' }}">Vender</a>
+    </nav>
+  </aside>
+  <main>
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, texto in msgs %}<div class="aviso {{ cat }}" role="status">{{ texto }}</div>{% endfor %}
+    {% endwith %}
+    {% block conteudo %}{% endblock %}
+  </main>
+</body>
+</html>
